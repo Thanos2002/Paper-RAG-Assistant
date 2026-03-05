@@ -37,6 +37,8 @@ def health_check():
 
 @app.post("/ingest")
 async def ingest_pdf(file: UploadFile = File(...)):
+    global chain, retriever
+    
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
@@ -50,6 +52,8 @@ async def ingest_pdf(file: UploadFile = File(...)):
     docs = load_pdfs("data")
     chunks = split_documents(docs)
     embed_and_store(chunks)
+    chain, retriever = build_rag_chain()
+
 
     return {"message": f"Successfully ingested '{file.filename}'", "chunks": len(chunks)}
 
