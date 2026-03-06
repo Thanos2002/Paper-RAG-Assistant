@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from langchain_chroma import Chroma 
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI  # ← correct import
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
@@ -16,21 +16,21 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # project root
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma_db")
 
-def load_vectorstore():
+def load_vectorstore(chroma_path: str = CHROMA_PATH):
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
     vectorstore = Chroma(
-        persist_directory=CHROMA_PATH,
+        persist_directory=chroma_path,
         embedding_function=embeddings
     )
     return vectorstore
 
-def build_rag_chain():
-    vectorstore = load_vectorstore()
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+def build_rag_chain(chroma_path: str = CHROMA_PATH):
+    vectorstore = load_vectorstore(chroma_path)
+    retriever = vectorstore.as_retriever()
 
-    prompt = PromptTemplate.from_template("""You are a helpful medical research assistant.
+    prompt = PromptTemplate.from_template("""You are a helpful research assistant.
 Use the following context from research papers to answer the question.
 If you don't know the answer based on the context, say "I don't have enough information in the provided documents."
 
@@ -41,10 +41,10 @@ Question: {question}
 
 Answer:""")
 
-    llm = ChatOpenAI(
-        model="arcee-ai/trinity-large-preview:free",
-        api_key=config["OPENAI_API_KEY"], 
-        base_url="https://openrouter.ai/api/v1",
+    llm = ChatGoogleGenerativeAI(  # ← correct class
+        model="gemma-3-27b-it",  # ← correct chat model
+        google_api_key=config["GEMINI_API_KEY"],
+        temperature=0.2,
     )
 
     def format_docs(docs):
@@ -57,6 +57,7 @@ Answer:""")
         | StrOutputParser()
     )
     return chain, retriever
+
 
 if __name__ == "__main__":
     print("[INFO] Building RAG chain...")

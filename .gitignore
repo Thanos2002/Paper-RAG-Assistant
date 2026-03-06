@@ -4,6 +4,7 @@ venv/
 
 # Vector store (large, regeneratable)
 chroma_db/
+chroma_sessions/
 
 # Python cache
 __pycache__/
@@ -12,6 +13,7 @@ __pycache__/
 
 # Data (optional - PDFs can be large)
 data/
+sessions/
 
 # MLflow
 mlruns/

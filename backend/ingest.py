@@ -30,18 +30,20 @@ def split_documents(documents):
     print(f"Split into {len(chunks)} chunks")
     return chunks
 
-def embed_and_store(chunks):
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    
+def embed_and_store(chunks, persist_dir: str = CHROMA_PATH):
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
     vectorstore = Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,
-        persist_directory=CHROMA_PATH
+        persist_directory=persist_dir  # ← uses custom path
     )
-    print(f"Stored {len(chunks)} chunks in ChromaDB at '{CHROMA_PATH}'")
+    print(f"Stored {len(chunks)} chunks in ChromaDB at '{persist_dir}'")
     return vectorstore
 
 
-documents = load_pdfs(DATA_PATH)
-chunks = split_documents(documents)
-vectorstore = embed_and_store(chunks)
+
+#documents = load_pdfs(DATA_PATH)
+#chunks = split_documents(documents)
+#vectorstore = embed_and_store(chunks)

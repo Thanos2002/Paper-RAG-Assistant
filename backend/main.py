@@ -1,12 +1,18 @@
 import os
 import shutil
+import uuid
 from dotenv import dotenv_values
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from backend.ingest import load_pdfs, split_documents, embed_and_store
 from backend.rag_chain import build_rag_chain
 from contextlib import asynccontextmanager
+from backend.evaluate import evaluate_rag, log_to_mlflow
+import time
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
+executor = ThreadPoolExecutor(max_workers=2)
 config = dotenv_values(".env")
 chain = None
 retriever = None
@@ -19,12 +25,15 @@ async def lifespan(app: FastAPI):
     yield
     # Runs once at shutdown (cleanup goes here)
 
-app = FastAPI(lifespan=lifespan)
 
+app = FastAPI(lifespan=lifespan)
 
 # --- Request/Response Models ---
 class QueryRequest(BaseModel):
     question: str
+    use_session: bool = False
+    session_id: str = None
+
 
 class QueryResponse(BaseModel):
     answer: str
@@ -57,16 +66,51 @@ async def ingest_pdf(file: UploadFile = File(...)):
 
     return {"message": f"Successfully ingested '{file.filename}'", "chunks": len(chunks)}
 
+
+@app.post("/ingest-session")
+async def ingest_session(files: list[UploadFile] = File(...)):
+    session_id = str(uuid.uuid4())
+    session_dir = f"sessions/{session_id}"
+    os.makedirs(session_dir, exist_ok=True)
+
+    for file in files:
+        if not file.filename.endswith(".pdf"):
+            raise HTTPException(status_code=400, detail=f"{file.filename} is not a PDF")
+        with open(f"{session_dir}/{file.filename}", "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+    docs = load_pdfs(session_dir)
+    chunks = split_documents(docs)
+    embed_and_store(chunks, persist_dir=f"chroma_sessions/{session_id}")
+
+    return {"session_id": session_id, "chunks": len(chunks)}
+
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
     global chain, retriever
 
+    start = time.time()  # ← start timer
+
+    if request.use_session and request.session_id:
+        session_chain, session_retriever = build_rag_chain(
+            chroma_path=f"chroma_sessions/{request.session_id}"
+        )
+        active_chain = session_chain
+        active_retriever = session_retriever
+    else:
+        active_chain = chain
+        active_retriever = retriever
+
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    answer = chain.invoke(request.question)
+    answer = active_chain.invoke(request.question)
+    source_docs = active_retriever.invoke(request.question)
 
-    source_docs = retriever.invoke(request.question)
+    latency = time.time() - start  # ← end timer
+
     sources = [
         {
             "page": doc.metadata.get("page", "?"),
@@ -75,5 +119,22 @@ async def query(request: QueryRequest):
         for doc in source_docs
     ]
 
-    return QueryResponse(answer=answer, sources=sources)
+    # Extract raw text from retrieved chunks for RAGAs
+    contexts = [doc.page_content for doc in source_docs]  
+
+    # ← Fire and forget, don't await
+    asyncio.get_event_loop().run_in_executor(
+        executor,
+        lambda: _evaluate_and_log(request.question, answer, contexts, latency, request.session_id or "global")
+    )
+
+    return QueryResponse(answer=answer, sources=sources)  # ← returns immediately
+
+
+def _evaluate_and_log(question, answer, contexts, latency, session_id):
+    try:
+        scores = evaluate_rag(question, answer, contexts)
+        log_to_mlflow(question, answer, scores, latency, session_id)
+    except Exception as e:
+        print(f"[MLflow] Evaluation failed: {e}")
 
