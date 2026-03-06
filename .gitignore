@@ -2,18 +2,19 @@
 .env
 venv/
 
-# Vector store (large, regeneratable)
+# ChromaDB vector stores
 chroma_db/
 chroma_sessions/
+sessions/
 
-# Python cache
+# MLflow
+mlflow.db
+mlruns/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
 
-# Data (optional - PDFs can be large)
+# Data
 data/
-sessions/
-
-# MLflow
-mlruns/
