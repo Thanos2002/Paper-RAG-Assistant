@@ -1,4 +1,4 @@
-# 🧬 Paper RAG Assistant
+# Paper Assistant (RAG)
 
 A production-ready Retrieval-Augmented Generation (RAG) system that answers questions about research papers with high accuracy. Built with LangChain, ChromaDB, Gemini, and monitored with RAGAs + MLflow.
 
@@ -46,7 +46,6 @@ Add your keys to `.env`:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key
-OPENAI_API_KEY=your_openrouter_key   # used for RAGAs evaluation
 ```
 
 ### 3. Ingest your PDFs
@@ -106,4 +105,3 @@ Each query is automatically evaluated and logged to MLflow:
 | Key | Where to get it |
 |-----|----------------|
 | `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com) |
-| `OPENAI_API_KEY` | [openrouter.ai](https://openrouter.ai) (free tier) |
