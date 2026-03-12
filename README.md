@@ -1,15 +1,17 @@
-# Medical RAG Assistant
-A production-ready RAG system for medical research papers using LangChain, ChromaDB, and DeepSeek via OpenRouter.
+# GEMINI CLI SYSTEM INSTRUCTIONS
 
-## Stack
-- LangChain (LCEL) + ChromaDB + HuggingFace Embeddings
-- DeepSeek via OpenRouter API
-- FastAPI + Streamlit (coming soon)
+## 🛠 TECH STACK CONTEXT
+- **Framework**: FastAPI (Python 3.9+)
+- **Primary LLM**: Google Gemini (generative-ai SDK)
+- **Vector DB**: ChromaDB / FAISS
+- **Tracking**: MLflow
+- **Database**: PostgreSQL with pgvector / SQLite
+- **Architecture**: RAG (Retrieval-Augmented Generation)
 
-## Setup
-```
-pip install -r requirements.txt
-cp .env.example .env  # add your OpenRouter key
-python backend/ingest.py
-python backend/rag_chain.py
-```
+## ⚠️ OPERATIONAL PROTOCOL (MANDATORY)
+1. **NO SILENT WRITES**: You are strictly prohibited from modifying, creating, or deleting files in this repository without explicit user authorization.
+2. **PROPOSE BEFORE ACTING**: For every code change, you must first:
+    - Display a `diff` or a summary of the intended changes.
+    - Ask the user: "Should I apply these changes? (y/n)"
+3. **EXECUTION**: Only execute the write command if the user responds with "y", "yes", or a similar affirmative.
+

@@ -1,6 +1,7 @@
 # Environment
 .env
 venv/
+README.md
 
 # ChromaDB vector stores
 chroma_db/
