@@ -2,7 +2,7 @@ import os
 import shutil
 import uuid
 from dotenv import dotenv_values
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from backend.ingest import load_pdfs, split_documents, embed_and_store
 from backend.rag_chain import build_rag_chain
@@ -10,9 +10,7 @@ from contextlib import asynccontextmanager
 from backend.evaluate import evaluate_rag, log_to_mlflow
 import time
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
-executor = ThreadPoolExecutor(max_workers=2)
 config = dotenv_values(".env")
 chain = None
 retriever = None
@@ -88,7 +86,7 @@ async def ingest_session(files: list[UploadFile] = File(...)):
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest):
+async def query(request: QueryRequest, background_tasks: BackgroundTasks):
     global chain, retriever
 
     start = time.time()  # ← start timer
@@ -107,7 +105,12 @@ async def query(request: QueryRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
     answer = active_chain.invoke(request.question)
-    source_docs = active_retriever.invoke(request.question)
+    
+    # Check if retriever is a function or has an .invoke method
+    if callable(active_retriever) and not hasattr(active_retriever, "invoke"):
+        source_docs = active_retriever(request.question)
+    else:
+        source_docs = active_retriever.invoke(request.question)
 
     latency = time.time() - start  # ← end timer
 
@@ -122,10 +125,14 @@ async def query(request: QueryRequest):
     # Extract raw text from retrieved chunks for RAGAs
     contexts = [doc.page_content for doc in source_docs]  
 
-    # ← Fire and forget, don't await
-    asyncio.get_event_loop().run_in_executor(
-        executor,
-        lambda: _evaluate_and_log(request.question, answer, contexts, latency, request.session_id or "global")
+    # Use FastAPI's BackgroundTasks
+    background_tasks.add_task(
+        _evaluate_and_log, 
+        request.question, 
+        answer, 
+        contexts, 
+        latency, 
+        request.session_id or "global"
     )
 
     return QueryResponse(answer=answer, sources=sources)  # ← returns immediately

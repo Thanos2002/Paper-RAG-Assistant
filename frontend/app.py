@@ -1,68 +1,111 @@
 import streamlit as st
 import requests
 
+# Set page configuration
+st.set_page_config(page_title="Paper Assistant", layout="wide")
+
+# --- Initialize Session State ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "session_id" not in st.session_state:
+    st.session_state.session_id = None
+if "pdf_uploaded" not in st.session_state:
+    st.session_state.pdf_uploaded = False
+
+# --- Sidebar: Upload & Settings ---
+with st.sidebar:
+    st.title("Settings & Upload")
+    st.header("Upload paper PDFs")
+    pdfs = st.file_uploader(
+        "Upload reference documents", 
+        accept_multiple_files=True, 
+        type="pdf",
+        help="Upload one or more PDFs to create a searchable context."
+    )
+
+    if pdfs:
+        if st.button("Ingest Documents", use_container_width=True):
+            with st.spinner("Processing documents..."):
+                try:
+                    response = requests.post(
+                        "http://127.0.0.1:8000/ingest-session",
+                        files=[
+                            ("files", (pdf.name, pdf.getvalue(), "application/pdf"))
+                            for pdf in pdfs
+                        ]
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        st.session_state.session_id = data["session_id"]
+                        st.session_state.pdf_uploaded = True
+                        st.success(f"Ingested {len(pdfs)} PDFs ({data['chunks']} chunks)")
+                        st.info(f"Session ID: {st.session_state.session_id}")
+                    else:
+                        st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
+                except Exception as e:
+                    st.error(f"Connection error: {e}")
+
+    st.divider()
+    if st.button("Clear Chat History", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+
+    st.caption("⚠️ **Disclaimer:** This tool is for informational purposes only.")
+
+# --- Main Chat Interface ---
 st.title("Paper Assistant")
 
-# --- Section 1: Upload PDF ---
-st.header("Upload your PDFs")
-pdfs = st.file_uploader("Upload the documents for the model to use as references",accept_multiple_files=True, type="pdf")
+# Display chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        if "sources" in message:
+            with st.expander("View Sources"):
+                for source in message["sources"]:
+                    st.write(f"📄 Page {source['page']} — {source['source']}")
 
-if pdfs:  
-    if st.button("Upload PDFs"):
-        with st.spinner("Ingesting PDFs..."):
-            response = requests.post(
-                "http://127.0.0.1:8000/ingest-session",
-                files=[
-                    ("files", (pdf.name, pdf.getvalue(), "application/pdf"))
-                    for pdf in pdfs  # ← loop through all files
-                ]
-            )
-        if response.status_code == 200:
-            st.session_state["session_id"] = response.json()["session_id"]
-            st.session_state["pdf_uploaded"] = True
-            st.success(f"Uploaded {len(pdfs)} PDFs! ({response.json()['chunks']} chunks)")
-        else:
-            st.error(f"Error: {response.json()['detail']}")
-
+# Chat input
+if prompt := st.chat_input("Ask a medical question..."):
+    # Check if a PDF has been uploaded
+    if not st.session_state.pdf_uploaded:
+        st.warning("Please upload and ingest a PDF in the sidebar first to start the session.")
     else:
-        st.session_state["pdf_uploaded"] = False
-else:
-    st.warning("Please upload a file first in order to proceed!")
-st.divider()
+        # Display user message
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-# --- Section 2: Ask a Question ---
-st.header("Ask a Question")
-user_input = st.text_input("Your question:")
-
-# Toggle — only show if a PDF was uploaded
-use_own_pdf = True
-
-#if "session_id" in st.session_state:
-#    use_own_pdf = st.toggle("Use only my uploaded PDF")
-
-if st.button("Ask"):
-    if user_input.strip():
-        payload = {
-            "question": user_input,
-            "use_session": use_own_pdf,
-            "session_id": st.session_state.get("session_id")
-        }
-        with st.spinner("Thinking..."):
-            response = requests.post(
-                "http://127.0.0.1:8000/query",
-                json=payload
-            )
-
-        if response.status_code == 200:
-            data = response.json()
-            st.success("Done!")
-            st.subheader("Answer")
-            st.write(data["answer"])
-            st.subheader("Sources")
-            for source in data["sources"]:
-                st.write(f"📄 Page {source['page']} — {source['source']}")
-        else:
-            st.error(f"Error: {response.json()['detail']}")
-    else:
-        st.warning("Please enter a question first.")
-
+        # Generate assistant response
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing sources..."):
+                payload = {
+                    "question": prompt,
+                    "use_session": True,
+                    "session_id": st.session_state.session_id
+                }
+                try:
+                    response = requests.post("http://127.0.0.1:8000/query", json=payload)
+                    if response.status_code == 200:
+                        data = response.json()
+                        answer = data["answer"]
+                        sources = data["sources"]
+                        
+                        st.markdown(answer)
+                        with st.expander("View Sources"):
+                            for source in sources:
+                                st.write(f"📄 Page {source['page']} — {source['source']}")
+                        
+                        # Save to history
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": answer, 
+                            "sources": sources
+                        })
+                    else:
+                        try:
+                            error_detail = response.json().get('detail', 'Query failed')
+                            st.error(f"Backend Error: {error_detail}")
+                        except:
+                            st.error(f"Backend Error ({response.status_code}): {response.text}")
+                except Exception as e:
+                    st.error(f"Connection error: {e}")
